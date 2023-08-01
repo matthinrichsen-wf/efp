@@ -669,41 +669,41 @@ func (ps *Parser) Parse(formula string) []Token {
 // format.
 func (ps *Parser) PrettyPrint() string {
 	indent := 0
-	output := ""
+	var output strings.Builder
 	for _, t := range ps.Tokens.Items {
 		if t.TSubType == TokenSubTypeStop {
 			indent--
 		}
 		for i := 0; i < indent; i++ {
-			output += "\t"
+			output.WriteString("\t")
 		}
-		output += t.TValue + " <" + t.TType.String() + "> <" + t.TSubType.String() + ">" + "\n"
+		output.WriteString(t.TValue + " <" + t.TType.String() + "> <" + t.TSubType.String() + ">" + "\n")
 		if t.TSubType == TokenSubTypeStart {
 			indent++
 		}
 	}
-	return output
+	return output.String()
 }
 
 // Render provides function to get formatted formula after parsed.
 func (ps *Parser) Render() string {
-	output := ""
+	var output strings.Builder
 	for _, t := range ps.Tokens.Items {
 		if t.TType == TokenTypeFunction && t.TSubType == TokenSubTypeStart {
-			output += t.TValue + ParenOpen
+			output.WriteString(t.TValue + ParenOpen)
 		} else if t.TType == TokenTypeFunction && t.TSubType == TokenSubTypeStop {
-			output += ParenClose
+			output.WriteString(ParenClose)
 		} else if t.TType == TokenTypeSubexpression && t.TSubType == TokenSubTypeStart {
-			output += ParenOpen
+			output.WriteString(ParenOpen)
 		} else if t.TType == TokenTypeSubexpression && t.TSubType == TokenSubTypeStop {
-			output += ParenClose
+			output.WriteString(ParenClose)
 		} else if t.TType == TokenTypeOperand && t.TSubType == TokenSubTypeText {
-			output += QuoteDouble + t.TValue + QuoteDouble
+			output.WriteString(QuoteDouble + t.TValue + QuoteDouble)
 		} else if t.TType == TokenTypeOperatorInfix && t.TSubType == TokenSubTypeIntersection {
-			output += Whitespace
+			output.WriteString(Whitespace)
 		} else {
-			output += t.TValue
+			output.WriteString(t.TValue)
 		}
 	}
-	return output
+	return output.String()
 }

@@ -22,3 +22,29 @@ func FuzzParse(f *testing.F) {
 		t.Log(p.Render())
 	})
 }
+
+var benchFormulas = []string{"=0", "=SUM(A3+B9*2)/2"}
+
+func BenchmarkExcelParser(b *testing.B) {
+	for _, formula := range benchFormulas {
+		b.ResetTimer()
+
+		ps := efp.ExcelParser()
+		b.Run(formula, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				ps.Parse(formula)
+			}
+		})
+
+		b.Run(formula+`.PrettyPrint()`, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				ps.PrettyPrint()
+			}
+		})
+		b.Run(formula+`.Render()`, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				ps.Render()
+			}
+		})
+	}
+}

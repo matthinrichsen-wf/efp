@@ -553,18 +553,70 @@ func (ps *Parser) getTokens() Tokens {
 	}
 
 	// move all tokens to a new collection, excluding all unnecessary white-space tokens
+	// switch infix "-" operator to prefix when appropriate, switch infix "+"
+	// operator to noop when appropriate, identify operand and infix-operator
+	// subtypes, pull "@" from in front of function names
 	tokens2 := fTokens(0, len(ps.Tokens.Items))
 
+	var previousType TokenType
+	var previousSubType TokenSubType
 	for ps.Tokens.moveNext() {
 		token := ps.Tokens.current()
 
 		if token.TType == TokenTypeWhitespace {
 			if ps.Tokens.BOF() || ps.Tokens.EOF() {
-			} else if !(((ps.Tokens.previous().TType == TokenTypeFunction) && (ps.Tokens.previous().TSubType == TokenSubTypeStop)) || ((ps.Tokens.previous().TType == TokenTypeSubexpression) && (ps.Tokens.previous().TSubType == TokenSubTypeStop)) || (ps.Tokens.previous().TType == TokenTypeOperand)) {
-			} else if !(((ps.Tokens.next().TType == TokenTypeFunction) && (ps.Tokens.next().TSubType == TokenSubTypeStart)) || ((ps.Tokens.next().TType == TokenTypeSubexpression) && (ps.Tokens.next().TSubType == TokenSubTypeStart)) || (ps.Tokens.next().TType == TokenTypeOperand)) {
+			} else if prev := ps.Tokens.previous(); !(((prev.TType == TokenTypeFunction) && (prev.TSubType == TokenSubTypeStop)) || ((prev.TType == TokenTypeSubexpression) && (prev.TSubType == TokenSubTypeStop)) || (prev.TType == TokenTypeOperand)) {
+			} else if next := ps.Tokens.next(); !(((next.TType == TokenTypeFunction) && (next.TSubType == TokenSubTypeStart)) || ((next.TType == TokenTypeSubexpression) && (next.TSubType == TokenSubTypeStart)) || (next.TType == TokenTypeOperand)) {
 			} else {
-				tokens2.add(token.TValue, TokenTypeOperatorInfix, TokenSubTypeIntersection)
+				tk := fToken(token.TValue, TokenTypeOperatorInfix, TokenSubTypeIntersection)
+				token = &tk
 			}
+		}
+
+		switch {
+		case token.TType == TokenTypeOperatorInfix && token.TValue == "-":
+			if tokens2.BOF() {
+				token.TType = TokenTypeOperatorPrefix
+			} else if ((previousType == TokenTypeFunction) && (previousSubType == TokenSubTypeStop)) || ((previousType == TokenTypeSubexpression) && (previousSubType == TokenSubTypeStop)) || (previousType == TokenTypeOperatorPostfix) || (previousType == TokenTypeOperand) {
+				token.TSubType = TokenSubTypeMath
+			} else {
+				token.TType = TokenTypeOperatorPrefix
+			}
+		case token.TType == TokenTypeOperatorInfix && token.TValue == "+":
+			if tokens2.BOF() {
+				token.TType = TokenTypeNoop
+			} else if (previousType == TokenTypeFunction) && (previousSubType == TokenSubTypeStop) || ((previousType == TokenTypeSubexpression) && (previousSubType == TokenSubTypeStop) || (previousType == TokenTypeOperatorPostfix) || (previousType == TokenTypeOperand)) {
+				token.TSubType = TokenSubTypeMath
+			} else {
+				token.TType = TokenTypeNoop
+			}
+		case token.TType == TokenTypeOperatorInfix && token.TSubType == TokenSubTypeUnset:
+			if r := token.TValue[0]; r == '<' || r == '>' || r == '=' {
+				token.TSubType = TokenSubTypeLogical
+			} else if token.TValue == "&" {
+				token.TSubType = TokenSubTypeConcatenation
+			} else {
+				token.TSubType = TokenSubTypeMath
+			}
+		case token.TType == TokenTypeOperand && token.TSubType == TokenSubTypeUnset:
+			if _, err := strconv.ParseFloat(token.TValue, 64); err != nil {
+				if (token.TValue == "TRUE") || (token.TValue == "FALSE") {
+					token.TSubType = TokenSubTypeLogical
+				} else {
+					token.TSubType = TokenSubTypeRange
+				}
+			} else {
+				token.TSubType = TokenSubTypeNumber
+			}
+		case token.TType == TokenTypeFunction:
+			if (len(token.TValue) > 0) && token.TValue[0] == '@' {
+				token.TValue = token.TValue[1:]
+			}
+		}
+
+		previousType = token.TType
+		previousSubType = token.TSubType
+		if token.TType == TokenTypeNoop {
 			continue
 		}
 
@@ -575,81 +627,8 @@ func (ps *Parser) getTokens() Tokens {
 		})
 	}
 
-	// switch infix "-" operator to prefix when appropriate, switch infix "+"
-	// operator to noop when appropriate, identify operand and infix-operator
-	// subtypes, pull "@" from in front of function names
-	for tokens2.moveNext() {
-		token := tokens2.current()
-		if (token.TType == TokenTypeOperatorInfix) && (token.TValue == "-") {
-			if tokens2.BOF() {
-				token.TType = TokenTypeOperatorPrefix
-			} else if ((tokens2.previous().TType == TokenTypeFunction) && (tokens2.previous().TSubType == TokenSubTypeStop)) || ((tokens2.previous().TType == TokenTypeSubexpression) && (tokens2.previous().TSubType == TokenSubTypeStop)) || (tokens2.previous().TType == TokenTypeOperatorPostfix) || (tokens2.previous().TType == TokenTypeOperand) {
-				token.TSubType = TokenSubTypeMath
-			} else {
-				token.TType = TokenTypeOperatorPrefix
-			}
-			continue
-		}
-
-		if (token.TType == TokenTypeOperatorInfix) && (token.TValue == "+") {
-			if tokens2.BOF() {
-				token.TType = TokenTypeNoop
-			} else if (tokens2.previous().TType == TokenTypeFunction) && (tokens2.previous().TSubType == TokenSubTypeStop) || ((tokens2.previous().TType == TokenTypeSubexpression) && (tokens2.previous().TSubType == TokenSubTypeStop) || (tokens2.previous().TType == TokenTypeOperatorPostfix) || (tokens2.previous().TType == TokenTypeOperand)) {
-				token.TSubType = TokenSubTypeMath
-			} else {
-				token.TType = TokenTypeNoop
-			}
-			continue
-		}
-
-		if (token.TType == TokenTypeOperatorInfix) && (token.TSubType == TokenSubTypeUnset) {
-			if strings.ContainsAny(token.TValue[0:1], "<>=") {
-				token.TSubType = TokenSubTypeLogical
-			} else if token.TValue == "&" {
-				token.TSubType = TokenSubTypeConcatenation
-			} else {
-				token.TSubType = TokenSubTypeMath
-			}
-			continue
-		}
-
-		if (token.TType == TokenTypeOperand) && (token.TSubType == TokenSubTypeUnset) {
-			if _, err := strconv.ParseFloat(token.TValue, 64); err != nil {
-				if (token.TValue == "TRUE") || (token.TValue == "FALSE") {
-					token.TSubType = TokenSubTypeLogical
-				} else {
-					token.TSubType = TokenSubTypeRange
-				}
-			} else {
-				token.TSubType = TokenSubTypeNumber
-			}
-			continue
-		}
-
-		if token.TType == TokenTypeFunction {
-			if (len(token.TValue) > 0) && token.TValue[0:1] == "@" {
-				token.TValue = token.TValue[1:]
-			}
-			continue
-		}
-	}
-
 	tokens2.reset()
-
-	// move all tokens to a new collection, excluding all no-ops
-	tokens := fTokens(0, len(tokens2.Items))
-	for tokens2.moveNext() {
-		if tokens2.current().TType != TokenTypeNoop {
-			tokens.addRef(Token{
-				TValue:   tokens2.current().TValue,
-				TType:    tokens2.current().TType,
-				TSubType: tokens2.current().TSubType,
-			})
-		}
-	}
-
-	tokens.reset()
-	return tokens
+	return tokens2
 }
 
 // doubleChar provides function to get two characters after the current
